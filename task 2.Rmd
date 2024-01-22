@@ -1,0 +1,329 @@
+---
+title: "structural equation modelling"
+output: html_notebook
+---
+
+```{r}
+install.packages("psych")
+install.packages("naniar")
+install.packages("sjlabelled")
+install.packages("tidyverse")
+install.packages("mice")
+install.packages("VIM")
+install.packages("MissMech") 
+install.packages("mice")
+install.packages("MoEClust")
+install.packages("miceadds")
+install.packages("Rcpp")
+```
+```{r}
+install.packages("https://cran.r-project.org/src/contrib/Archive/MissMech/MissMech_1.0.2.tar.gz", repos=NULL, type="source")
+library(psych)
+library(naniar)
+library(sjlabelled)
+library(tidyverse)
+library(mice)
+library(VIM)
+library(MissMech)
+library(mice)
+library(MoEClust)
+library(miceadds)
+```
+```{r}
+academic <- read_csv("C:/Users/h3man/OneDrive/Desktop/pb230/PB230-master/Secondary Data Analysis/Task 2/academic.csv")
+```
+```{r}
+describe(academic)
+```
+##amount/ pattern of missing data 
+
+```{r}
+academic_var <-
+  academic %>%
+  select(4:13) # select out only the items
+md.pattern(academic_var)
+```
+```{r}
+aggr(academic_var, col=c('white','red'), numbers=TRUE, sortVars=TRUE, cex.axis=.7, gap=3, ylab=c("Percentage of missing data","Missing Data Pattern"))
+vis_miss(academic_var)
+```
+```{r}
+out.MCAR.ws <- TestMCARNormality(academic_var, del.lesscases = 1)
+summary(out.MCAR.ws)
+```
+missing data due to MCAR
+
+```{r}
+academic_var$na_count <- apply(is.na(academic_var), 1, sum)
+academic_var
+```
+```{r}
+academic_var <- 
+academic_var %>% 
+filter(na_count <= "1")
+academic_var
+```
+##scale mean imputation
+```{r}
+academic_var <-
+  academic_var %>%
+  rowwise()%>%
+  mutate(meanperfection = mean(c(per1,per2,per3), na.rm = TRUE)) %>%
+  mutate(meanrumination = mean(c(rum1,rum2,rum3), na.rm = TRUE)) %>%
+  mutate(meanexhaustion = mean(c(ex1,ex2,ex3,ex4), na.rm = TRUE)) 
+academic_var
+```
+```{r}
+#perfectionism
+
+academic_var <- within(academic_var, per1 <- ifelse(is.na(per1), meanperfection, per1)) 
+academic_var <- within(academic_var, per2 <- ifelse(is.na(per2), meanperfection, per2))
+academic_var <- within(academic_var, per3 <- ifelse(is.na(per3), meanperfection, per3))
+
+#exhaustion
+
+academic_var <- within(academic_var, ex1 <- ifelse(is.na(ex1), meanexhaustion, ex1)) 
+academic_var <- within(academic_var, ex2 <- ifelse(is.na(ex2), meanexhaustion, ex2))
+academic_var <- within(academic_var, ex3 <- ifelse(is.na(ex3), meanexhaustion, ex3))
+academic_var <- within(academic_var, ex4 <- ifelse(is.na(ex4), meanexhaustion, ex4))
+
+#rumination
+
+academic_var <- within(academic_var, rum1 <- ifelse(is.na(rum1), meanrumination, rum1)) 
+academic_var <- within(academic_var, rum2 <- ifelse(is.na(rum2), meanrumination, rum2))
+academic_var <- within(academic_var, rum3 <- ifelse(is.na(rum3), meanrumination, rum3))
+
+academic_var
+```
+```{r}
+md.pattern(academic_var)
+```
+```{r}
+academic_var <-
+  academic_var %>%
+  rowwise()%>%
+  mutate(meanperfection = mean(c(per1,per2,per3))) %>%
+  mutate(meanrumination = mean(c(rum1,rum2,rum3))) %>%
+  mutate(meanexhaustion = mean(c(ex1,ex2,ex3,ex4)))
+academic_var
+```
+##univariate outliers
+
+```{r}
+# Standardize variables
+
+academic_var$zperfection <- scale(academic_var$meanperfection)
+academic_var$zrumination <- scale(academic_var$meanrumination)
+academic_var$zexhaustion <- scale(academic_var$meanexhaustion)
+
+# remove perfectionism outliers
+
+academic_var <- 
+  academic_var %>%
+  filter(zperfection >= -3.30 & zperfection <= 3.30)
+academic_var
+
+# remove rumination outliers
+
+academic_var <- 
+  academic_var %>%
+  filter(zrumination >= -3.30 & zrumination <= 3.30)
+academic_var
+
+# remove exhuation outliers
+
+academic_var <- 
+  academic_var %>%
+  filter(zexhaustion >= -3.30 & zexhaustion <= 3.30)
+academic_var
+```
+##multivariate outliers
+
+```{r}
+linear.model <- lm(per1 ~ meanperfection + meanrumination + meanexhaustion, data=academic_var)
+academic_var$res  <- academic_var$per1 - predict(linear.model) 
+academic_var$mahal <- MoE_mahala(linear.model, academic_var$res)
+academic_var 
+summary(linear.model)
+```
+```{r}
+academic_var <- 
+  academic_var %>%
+  filter(mahal <= 16.28)
+academic_var
+```
+
+```{r}
+describe(academic_var$meanperfection)
+describe(academic_var$meanrumination)
+describe(academic_var$meanexhaustion)
+```
+##descriptive statistics and distributions
+
+```{r}
+library(ggplot2)
+ggplot(academic_var, aes(x=meanperfection)) +
+   geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") +
+  geom_vline(aes(xintercept=mean(meanperfection)),
+            color="blue", linetype="dashed", size=1) +
+   labs(title="perfectionism distribution",x="perfectionism", y = "density")+
+  theme_classic()
+```
+
+```{r}
+ggplot(academic_var, aes(x=meanrumination)) +
+   geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") +
+  geom_vline(aes(xintercept=mean(meanrumination)),
+            color="blue", linetype="dashed", size=1) +
+   labs(title="rumination distribution",x="rumination", y = "density")+
+  theme_classic()
+```
+
+```{r}
+ggplot(academic_var, aes(x=meanexhaustion)) +
+   geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") +
+  geom_vline(aes(xintercept=mean(meanexhaustion)),
+            color="blue", linetype="dashed", size=1)+
+   labs(title="exhaustion distribution",x="exhaustion", y = "density")+
+  theme_classic()
+```
+##latent variable SEM
+
+```{r}
+install.packages("readr")
+install.packages("lavaan")
+install.packages("semPlot")
+```
+```{r}
+library(readr)
+library(lavaan)
+library(semPlot)
+```
+##building measurement model
+
+```{r}
+measurement.model <- "
+perfectionism =~ 1*per1 + per2 + per3
+rumination =~ 1*rum1 + rum2 + rum3 
+exhaustion =~ 1*ex1 + ex2 + ex3 + ex4 
+"
+```
+
+```{r}
+measurement.model.fit <- cfa(measurement.model, data=academic_var)
+summary(measurement.model.fit, fit.measures=TRUE, standardized=TRUE)
+```
+CFI= 0.92, TLI=0.96, SRMR=0.5, RMSEA=0.06. Indicates adequate fit. (TLI & CFI > .90; RMSEA and SRMR < .10). factor loadings above 0.4
+
+```{r}
+library(tidyverse)
+library(Hmisc)
+academic_var <- academic_var %>%
+  mutate(meanperfection = (per1 + per2 + per3)/3)
+academic_var <- academic_var %>%
+  mutate(meanrumination = (rum1 + rum2 + rum3)/3)
+academic_var <- academic_var %>%
+  mutate(meanexhaustion = (ex1 + ex2 + ex3 +ex4)/4)
+rcorr(as.matrix(academic_var[,c("meanperfection","meanrumination", "meanexhaustion")], type="pearson"))
+```
+
+
+```{r}
+# save standardised factor loadings in object s1
+sl <- standardizedSolution(measurement.model.fit)
+
+# extract from s1 standardised estimates (est.std) form only parent conditional regard
+sl <- sl$est.std[sl$lhs == "perfectionism"]
+
+# calculate the residual variances
+re <- 1 - sl^2
+
+# calculate the composite reliability
+sum(sl)^2 / (sum(sl)^2 + sum(re))
+```
+composite reliability of perfectionism is good reliability of the measure, 0.85, above 0.7. 
+
+```{r}
+# save standardised factor loadings in object s1
+sl <- standardizedSolution(measurement.model.fit)
+
+# extract from s1 standardised estimates (est.std) form only parent conditional regard
+sl <- sl$est.std[sl$lhs == "rumination"]
+
+# calculate the residual variances
+re <- 1 - sl^2
+
+# calculate the composite reliability
+sum(sl)^2 / (sum(sl)^2 + sum(re))
+```
+good composite reliability of rumination
+
+```{r}
+# save standardised factor loadings in object s1
+sl <- standardizedSolution(measurement.model.fit)
+
+# extract from s1 standardised estimates (est.std) form only parent conditional regard
+sl <- sl$est.std[sl$lhs == "exhaustion"]
+
+# calculate the residual variances
+re <- 1 - sl^2
+
+# calculate the composite reliability
+sum(sl)^2 / (sum(sl)^2 + sum(re))
+```
+good reliability of exhaustion. 
+
+##visualizing the CFA
+```{r}
+semPaths(measurement.model.fit, "std")
+```
+The measurement model consisted of 3 inter-correlated latent variables. The 3 mother perfectionism items were combined and used as the measured variables for the perfectionism variable (3 indicators). Items were also used as the measured variables for rumination (3 indicators) and for rumination (4 indicators).
+
+All standardised factor loadings for the measured variables on their latent factors were significant (perfectionism β range = .74 to .8; rumination β range = .8 to .9; exhaustion β range = .77 & .79). Furthermore, each of these latent factors demonstrated acceptable composite reliability (perfectionism ρ = .85; rumination ρ = .9; exhaustion ρ = .9). The measurement model exhibited an acceptable fit to the data: χ² = 59.61 (32), p < .05; TLI = .96; CFI = .97; SRMR = .05; RMSEA = .06 (90% CI = .06 to .09). All error-free correlations between latent factors were positive. The correlation between perfectionism and rumination was large at .57, the correlation between rumination and exhaustion was moderate at a value of .38. The correlation between perfectionism and exhaustion however was low and not statistically significant at .16.The criteria for effect size was as follows (i.e., small ≥ .10, moderate ≥ .30, large ≥ .50; Cohen 1988). Due to the insignificant effect size of the direct path it will be excluded from the structural equation model. 
+
+
+
+##testing the SEM
+
+```{r}
+sem.model2 <- "
+#measurement portion of model
+perfectionism =~ 1*per1 + per2 + per3 
+rumination =~ 1*rum1 + rum2 + rum3 
+exhaustion =~ 1*ex1 + ex2 + ex3 + ex4
+#structural portion of model
+exhaustion ~ b * rumination
+rumination ~ a * perfectionism
+ab := a*b
+"
+```
+
+```{r}
+# Fit SEM Model
+sem.fit2 <- sem(sem.model2, data=academic_var,se = "bootstrap", bootstrap = 5000)
+
+# Summarize SEM model
+summary(sem.fit2, fit.measures=TRUE, standardized=TRUE)
+```
+CFI= 0.97, TLI=0.96, RMSEA=0.6, SRMR=0.5.
+
+```{r}
+parameterestimates(sem.fit2, boot.ci.type = "perc", standardized = TRUE)
+```
+ab path b=0.13, CI=.05,.22, P=.002. perfection positively predicted rumination b=.53, B=.09, CI=.36, .73, P=0. rumination positively predicted exhaustion b=.23, B=.06, CI=.11,.36, P=0.
+
+```{r}
+lavInspect(sem.fit2, what = "rsquare")
+```
+32% of the variation in rumination is explained by the SEM model, and 14% of the variation in exhaustion is explained by the SEM model.
+
+```{r}
+semPaths(sem.fit2, "std")
+```
+A full mediation model including the indirect path (ab) and excluded the direct path between perfectionism and exhaustion was preferred based on fit indexes. Fit indexes from this model suggested that this model possessed an acceptable fit to the data: TLI = .97; CFI = .96; SRMR = .05; RMSEA = .06. perfectionism positively predicted rumination (b = .53, B = .09, 95% CI = .36,.73). In turn, rumination positively predicts exhaustion (b = .23, B = .06, 95% CI = .11,.36). Altogether this model accounted for 32% of the variation in rumination and 14% of the variation in exhaustion.
+
+To test the magnitude and statistical significance of the indirect pathways in the model, we calculated indirect effects alongside 95% percentile confidence intervals derived from 5,000 bootstrap iterations. The indirect path in the model, between perfectionism and exhaustion via rumination, was significant (b = .13, B = .42, 95% CI = .05,.21). 
+

@@ -1,0 +1,184 @@
+---
+title: "multi-level modelling"
+output: html_notebook
+---
+
+ 
+
+```{r}
+install.packages("jtools")
+install.packages("interactions")
+install.packages("ggplot2")
+install.packages("tidyverse")
+install.packages("lme4")
+install.packages("readr")
+install.packages("lavaan")
+install.packages("sjmisc")
+install.packages("semplot")
+```
+```{r}
+library(jtools)
+library(interactions)
+library(ggplot2)
+library(tidyverse)
+library(lme4)
+library(readr)
+library(lavaan)
+library(sjmisc)
+library(semPlot)
+library(lmer)
+```
+
+```{r}
+library(psych)
+aggression_long <- read_csv("C:/Users/h3man/OneDrive/Desktop/pb230/PB230-master/Secondary Data Analysis/Task 3/aggression_long.csv")
+```
+
+```{r}
+ggplot (aggression_long, aes(x=neg)) +
+   geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") +
+  geom_vline(aes(xintercept=mean(neg)),
+            color="blue", linetype="dashed", size=1) +
+   labs(title="neglect distribution",x="neglect", y = "density")+
+  theme_classic()
+```
+
+```{r}
+ggplot (aggression_long, aes(x=agress)) +
+   geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") +
+  geom_vline(aes(xintercept=mean(agress)),
+            color="blue", linetype="dashed", size=1) +
+   labs(title="agression distribution",x="neglect", y = "agression")+
+  theme_classic()
+```
+
+```{r}
+describe(aggression_long$agress)
+describe(aggression_long$neg)
+```
+
+
+##multilevel model
+
+##empty model
+
+```{r}
+empty.aggression.fit <- lmer(formula = agress ~ 1 + (1|id), data=aggression_long, REML=FALSE)
+summary(empty.aggression.fit)
+```
+0.29- between person variability in aggression
+2.39- variance unexplained by the empty model
+
+here we calculate the ICC, this involves taking the variance component of the intercept and divide it by the sum of the residual variance and the intercept variance. 
+
+```{r}
+0.29/(0.29+2.39)
+```
+11% of the aggression is attributed to between-person differences.
+
+
+##centering 
+
+```{r}
+aggression_long$neg.c <- aggression_long$neg - mean(aggression_long$neg)
+```
+
+
+at level one our GLM equation is this:
+
+aggressti = ai + Bi*(timeti) + et
+
+at level one our predictor is time, ai is the intercept for person i, and bi is the trajectory. eti is the term for residual error. 
+
+level 1 and 2 equation:
+
+agressti = Ma + (MB + WBi)*timeti + Ba*(neglecti) + BB*(timeti*neglectti) + Wai + eti
+
+wbi is the term for residual error in aggression trajectories. Wai is the term for residual error in aggression intercepts. Ma is fixed effect for neglect, mb is fixed effect for aggression, BB is the relationship between neglect and aggression trajectories. Ba is the relationship between neglect and aggression intercepts.  
+
+level 1 predictor is time, level 2 predictor is neglect. level 1 looks at within person differences in aggression over time, and level 2 looks at between person differences in neglect. 
+##faceted plot
+
+```{r}
+ggplot(data=aggression_long[which(aggress$id <= 405)], aes(x=time,y=agress)) +
+  geom_point() +
+  stat_smooth(method="lm", fullrange=TRUE) +
+  xlab("Time") + ylab("aggression") +
+  facet_wrap( ~ id) +
+  theme(axis.title=element_text(size=16),
+        axis.text=element_text(size=14),
+        strip.text=element_text(size=14))
+```
+
+
+```{r}
+time.aggression.fit <- lmer(formula = agress ~ 1 + time + (1 + time|id), REML=FALSE, data=aggression_long)
+summary(time.aggression.fit)
+confint(time.aggression.fit, method="boot", nsim=5000)
+```
+fixed effects: 
+
+the intercept of the fixed effect is 2.7. This means the starting value of aggression for the average person is 2.7. 
+
+aggression significantly increases marginally over the years, for every unit increase in time, aggression increased by 1.12 units (CI 1.08, 1.16).
+
+random effects: 
+
+the between-person variance of the intercept is 0.57, sd=0.76. This variability is significant as bootstrapped CI don't cross 0 (0.67, 0.83). This signifies significant variance around the intercept that needs to be explained
+
+there is also between person varies in the time trajectories of aggression (variance= 0.07, sd= 0.27). This demonstrates variance around the mean, participants aggression increases and decreases over time. 
+
+whether the variance in aggression trajectories are significant, we look at sig03. the standardized variance is 0.27 with CI of 0.22 to 0.31. Therefore there is a significant amount of variance in the slopes to be explained. 
+
+the correlation between the random intercept and random slope was 0.29 indicating those with higher starting intercepts had steeper slopes. The relationship between the intercepts and slopes is  significant (95% CI = .05,.54). 
+
+
+```{r}
+ggplot(data=aggression_long, aes(x=time, y=agress, group=factor(id), colour="gray"), legend=FALSE) +
+  geom_smooth(method=lm, se=FALSE, fullrange=FALSE, lty=1, size=.5, color="gray40") +
+  geom_smooth(aes(group=1), method=lm, se=FALSE, fullrange=FALSE, lty=1, size=2, color="blue") +
+  xlab("Time") + ylab("aggression") +
+  theme_classic() +
+  theme(axis.title=element_text(size=18),
+        axis.text=element_text(size=14),
+        plot.title=element_text(size=18, hjust=.5)) +
+  ggtitle("Within-Person Trajectories of aggression")
+```
+blue line = fixed intercept (where fixed slope crosses zero) and fixed slope of aggression on time (i.e., the average trajectory over the sample). NOT FLAT SO SIGNIFICANT
+grey = variability in slopes and intercepts. see if we can explain some of that variability with the addition of our between-person predictor: neglect
+
+##adding a between person predictor 
+
+```{r}
+time.aggression.fit2 <- lmer(formula = agress ~ 1 + time + neg.c + time*neg.c + (1 + time|id), data=aggression_long)
+summary(time.aggression.fit2)
+confint(time.aggression.fit2, method="boot", nsim=5000)
+```
+fixed effects: 
+the value of aggression for the average person at the initial time point was 2.23. 
+
+the marginal increase in aggression over time is 0.93 (b=0.93, SE=0.08) (CI=0.77, 1.09)
+
+higher neglect predicted greater aggression scores (b=0.05, SE= .017), confidence intervals (.018, .085). Every 1 unit increase in neglect away from the group mean, there is a corresponding .17 deviation in agression. 
+
+We can see that between-person deviations for the grand mean in neglect moderates the relationship between time and aggression (b = .02, SE= .01). The confidence associated with this interaction indicates that it is just significantly greater than zero (95% CI = .004,.04). We can conclude that variance in the trajectories of aggression is explained, in part, by between-person differences in neglect.
+
+random effects: 
+
+There is between-person variability in the intercepts of aggression (variance = 0.56, sd = 0.75). To know whether this variability is significantly greater than zero, we inspect sig01 from the confidence interval table. We can see that the standardised variance of the intercepts (i.e., the SD) is .75 with a 95% CI from .67 to .82. This does not include zero. So even though the intercept variance is reduced with the addition of neglect to the time model, there is still a significant amount of random variance in the intercepts to be explained.
+
+There is between-person variability in the within-person trajectories of aggression over time (variance = 0.07, sd = 0.27). In other words, although the mean change in aggression is negligible, there is some variance around that mean change from person to person. The variance has remained the same once adding neglect to the model
+
+person to person variability in the trajectories of aggression is significantly greater than zero. We can see that the standardised variance of the slopes (i.e., the SD) is .27 with a 95% CI from .22 to .31. This does not include zero. So even though the interaction of time and neglect is significant, there remains a significant amount of random variance in the slopes to be explained beyond neglect.
+
+The correlation between the random intercept and random slope was 0.26, which indicates that those who had higher starting points for aggression were more likely to show increases in aggression over time. We can see that the relationship between the intercepts and slopes is significant (95% CI = .06,.53).
+
+
+##plotting interaction
+
+```{r}
+johnson_neyman(model=time.aggression.fit2, pred=time, modx=neg.c)
+```
+

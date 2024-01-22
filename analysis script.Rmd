@@ -1,0 +1,161 @@
+---
+title: "analysis script"
+output: html_notebook
+---
+This is a data analysis script for the replication of 'Sexy red: Perceived sexual receptivity mediates the red-attraction relation in men
+viewing woman' by Pazda et al., (2012).
+
+I replicated experiment 1a which examined the causal chain between the color red and perceived sexual receptivity, this was tested using an independent t-test.
+
+
+*research question* - does perceived sexual receptivity differ when a woman wears red compared to white?
+
+*null hypothesis* - the mean difference in perceived sexual receptivity between the white shirt condition and red shirt condition will be zero.
+
+*alternate hypothesis* - the mean difference in perceived sexual receptivity between the white shirt and red shirt condition will be greater than zero.
+
+
+##load data
+
+```{r}
+library(readr)
+indt <- read_csv("C:/Users/h3man/OneDrive/Desktop/research compendium/data/indt.csv")
+```
+##preliminary analysis
+
+#data screening and cleaning
+
+data will be screened for inaccurate and missing values. The outcome variable of this study is mean sexual receptivity (labelled as receptivity in the dataset), this variable is bounded between values 0-9 so any values beyond this limit will be replaced.
+
+```{r}
+library(tidyverse)
+library(psych)
+library(naniar)
+indt <-
+  indt %>%
+  replace_with_na(replace = list(~.receptivity > 9, ~.receptivity < 0)) 
+
+
+# Filtering by shirts
+redshirt <- filter(indt, condition == "redshirt")
+whiteshirt <- filter(indt, condition == "whiteshirt")
+
+describe(redshirt$receptivity)
+describe(whiteshirt$receptivity)
+
+```
+Due to the nature of the experiment, missing values will be removed from the sample.
+
+```{r}
+drop_na(indt)
+```
+##summary statistics and distributions
+
+Here I am checking the mean, standard deviations, and interquartile ranges of the red shirt and white shirt condition.
+
+
+```{r}
+library(mosaic)
+favstats(~receptivity, condition, data=indt)
+```
+The increment for the white shirt mean to reach the red shirt mean is 1.02652. The red shirt condition seems to score higher on percieved sexual receptivity of women on a 1-9 likert scale in the context of a small standard deviation. Therefore I'm going to investigate if the mean difference is meaningful and large enough for a zero difference in the wider population to be unlikely.
+
+Now I will create a distribution for each condition.
+
+```{r}
+library(ggplot2)
+library(plyr)
+library(dplyr)
+
+##mean for each condition
+
+means <- ddply(indt, "condition", summarise, receptivity.mean=mean(receptivity))
+```
+
+```{r}
+##plotting the distribution
+
+library(ggplot2)
+boxplot<-
+ggplot(indt, aes(x= condition, y= receptivity)) +
+  geom_boxplot(width = 0.3, fill = "white") +
+  geom_jitter(aes(color = as.factor(condition), shape = as.factor(condition)), width = 0.1, size = 1) +
+  xlab(NULL) +
+  ggtitle("box plot for sexual receptivity for red and white shirts") +
+  theme_minimal(base_size = 8) +
+  theme(legend.title=element_blank()) 
+boxplot
+  ggsave(file= "C:/Users/h3man/OneDrive/Desktop/research compendium/plots/boxplot.png")
+```
+One way I visualized my distribution was a boxplot, but it can also be visualized as a histogram. 
+```{r}
+##histogram 
+
+library(ggplot2)
+redhist<- 
+ggplot(redshirt, aes(x=receptivity, color = condition)) + 
+ geom_histogram(binwidth=1, colour= "black", fill= "red", position = "dodge") +
+geom_vline(aes(xintercept=mean(redshirt$receptivity)),
+            color="black", linetype="dashed", size=1) 
+redhist
+ggsave(file= "C:/Users/h3man/OneDrive/Desktop/research compendium/plots/redhist.png")
+
+whitehist<-
+ggplot(whiteshirt, aes(x=receptivity, color = condition)) + 
+ geom_histogram(binwidth=1, fill= "white", colour="black", position = "dodge") +
+  geom_vline(aes(xintercept=mean(whiteshirt$receptivity)),
+            color="black", linetype="dashed", size=1)
+whitehist
+ggsave(file= "C:/Users/h3man/OneDrive/Desktop/research compendium/plots/whitehist.png")
+```
+
+Lastly I'm creating an APA table with the mean and standard deviation of each condition.
+
+```{r}
+install.packages("apaTables")
+library(apaTables)
+apa.1way.table(iv=condition,dv=receptivity,data=indt,table.number = 1)
+```
+
+##confirmatory analysis
+
+Now I am investigating the primary hypothesis by conducting an independent t-test, this is followed by bootstrapping to infer how results would translate to the wider population.
+
+```{r}
+install.packages("MKinfer")
+library(MKinfer)
+t.test <- t.test(indt$receptivity ~ indt$condition, var.equal=TRUE)
+boot.t.test(indt$receptivity ~ indt$condition, var.equal=TRUE, R = 5000)
+```
+we have a T value of 2.4 and a p-value of 0.02, therefore the mean difference between the red shirt and white shirt condition of 1.02 is meaningful. We can reject the null hypothesis and accept the alternate hypothesis, that the color red increases perceived sexual receptivity of women.
+
+Now I will calculate the effect size of the experimental condition
+
+```{r}
+library(rstatix)
+cohens_d(indt, receptivity ~ condition,  var.equal = TRUE)
+```
+
+##tables and figures for reporting
+
+To report the results from the independent t-test I will visualize the means and 95% confidence intervals for each condition using a bar chart with error bars.
+
+```{r}
+library(rcompanion)
+bargraph<-
+sum <- groupwiseMean(receptivity ~ condition, data=indt,conf   = 0.95,digits = 3)
+qplot(x    = condition ,
+      y    = Mean,
+      data = sum) +
+geom_bar(stat ="identity",
+         fill = "gray", width = .40, alpha=.5
+        ) +
+geom_errorbar(aes(ymin  = Trad.lower,
+                  ymax  = Trad.upper,
+                  width = 0.15)) +
+  xlab("Condition") +
+  ylab("Mean sexual receptivity")+
+  theme_classic()
+bargraph
+ggsave("C:/Users/h3man/OneDrive/Desktop/research compendium/plots/bargraph.png")
+```

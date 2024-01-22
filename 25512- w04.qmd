@@ -1,0 +1,250 @@
+---
+title: "W04-summative"
+output: html
+self-contained: true
+---
+
+# W04 summative:
+
+#⚙️Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(mosaic)
+library(dplyr)
+library(readr)
+library(lubridate)
+library(tidymodels)
+```
+
+#📂opening the dataset
+
+```{r, message=FALSE, warning=FALSE }
+filepath <- "C:/Users/hanam/Desktop/DS202A/data/UK-HPI-full-file-2023-06.csv"
+uk_hpi <- read_csv(filepath)
+```
+
+#🗃️pre-processing data (step 1)
+
+```{r}
+selected_cols    <- c("Date", "RegionName", "12m%Change", "1m%Change", "SalesVolume")
+
+df_uk <-
+    uk_hpi %>%
+    select(all_of(selected_cols)) %>%
+    rename(date = Date, region = RegionName, yearly_change = `12m%Change`, monthly_change = `1m%Change`) %>%
+  filter(region == "United Kingdom") %>%
+    drop_na() %>% 
+    mutate(date = lubridate::dmy(date))
+
+df_uk  %>% head(8) %>% knitr::kable()
+```
+
+#adding lagged variables
+
+```{r}
+df_uk <- 
+    df_uk %>%
+    arrange(date) %>% 
+    mutate(SalesVolume1 = lag(SalesVolume, 1)) %>%
+   mutate(monthly_changes_lag1 = lag(monthly_change, 1)) %>%
+    drop_na() %>% 
+    arrange(desc(date))
+
+```
+
+#separating data- testing/training data sets (step 2)
+
+```{r, message=FALSE, warning=FALSE}
+df_uk_train <- df_uk %>% filter(date <   ymd("2020-01-01"))
+df_uk_test  <- df_uk %>% filter(date >=  ymd("2020-01-01"))
+```
+
+Here I am creating a training set (df_uk_train) which contains all data for the UK up until December 2019, and a testing set (df_uk_test) contain data from January 2020 onwards.
+
+# linear regression- Sales volume increase per month
+
+#Building linear model- model 1 (Step 3 & 4)
+
+Here I am building a linear model in which 'SalesVolume' is our outcome variable and 'SalesVolume1' (lagged sales volume) is our predictor, in order to measure change in sales volume per 1 month.
+
+```{r}
+model1 <- 
+  linear_reg() %>%
+    set_engine("lm") %>%
+    fit(SalesVolume ~ SalesVolume1, data = df_uk_train)
+```
+
+```{r}
+##model coefficients
+model1 %>% tidy()
+```
+
+The value of our intercept is approximately 1.36, whereas our gradient is 8.37. Therefore we can predict for every 1 month, sales volume will increase by 8.37%.
+
+If the model is a good fit, we can expect the slope to be correct within a 95% confidence interval of 8.37 +/- 4.09.
+
+```{r}
+##full model summary
+model1$fit %>% summary()
+```
+
+```{r}
+#Overall statistics
+model1 %>% glance()
+```
+
+#Building a linear model- model2
+
+Here I am building a linear model with the variables 'SalesVolume' as the outcome variable and 'monthly_change' as the predictor variable.
+
+```{r}
+model2 <- 
+  linear_reg() %>%
+    set_engine("lm") %>%
+    fit(SalesVolume ~ monthly_changes_lag1, data = df_uk_train)
+```
+
+```{r}
+##model coefficients
+model2 %>% tidy()
+
+```
+
+In model 2, our intercept is 79985, and our gradient is 13020. Therefore we can predict for every month, sales volume will increase by 13020 units.
+
+```{r}
+##full model summary
+model2$fit %>% summary()
+```
+
+```{r}
+#Overall statistics
+model2 %>% glance()
+```
+
+## 📈Plots/diagrams
+
+#Training set-model 1 (step 5)
+
+```{r}
+plot_df <- model1 %>% augment(df_uk_train)
+g <- ggplot(plot_df, aes(x = .pred, y = .resid)) +
+    geom_point(alpha=0.2, size=3, color="red", stroke=1) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(x = "Fitted values", y = "Residuals", title="Residuals vs Fitted") + 
+    theme_bw() + 
+    theme(axis.title.x = element_text(size = rel(1.2)), 
+          axis.text.x = element_text(size = rel(1.2)),
+          axis.title.y = element_text(size = rel(1.2)),
+          axis.text.y = element_text(size = rel(1.2)),
+          plot.title = element_text(size = rel(1.5), face = "bold"))
+g
+```
+
+The model appears to be a good fit, as the residual plot is linear.
+
+#Testing set- model 1
+
+```{r}
+ggplot(model1 %>% augment(df_uk_test), aes(.pred, .resid)) + 
+    geom_point(alpha=0.2, size=3, color="red", stroke=1) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(x = "Fitted values", y = "Residuals", title="Residuals vs Fitted") + 
+    theme_bw() + 
+    theme(axis.title.x = element_text(size = rel(1.2)), 
+          axis.text.x = element_text(size = rel(1.2)),
+          axis.title.y = element_text(size = rel(1.2)),
+          axis.text.y = element_text(size = rel(1.2)),
+          plot.title = element_text(size = rel(1.5), face = "bold"))
+
+```
+
+The model also appears to be a good fit for the testing data frame. It appears to be linear, however with a slight curvature and a larger scattering than our training set.
+
+#Training set- model 2
+
+```{r}
+ggplot(model2 %>% augment(df_uk_train), aes(.pred, .resid)) + 
+    geom_point(alpha=0.2, size=3, color="red", stroke=1) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(x = "Fitted values", y = "Residuals", title="Residuals vs Fitted") + 
+    theme_bw() + 
+    theme(axis.title.x = element_text(size = rel(1.2)), 
+          axis.text.x = element_text(size = rel(1.2)),
+          axis.title.y = element_text(size = rel(1.2)),
+          axis.text.y = element_text(size = rel(1.2)),
+          plot.title = element_text(size = rel(1.5), face = "bold"))
+```
+
+In comparison to our 'SalesVolume/SalesVolume1' lagged model, model 2 is less linear and highly scattered.
+
+#Testing set- model 2
+
+```{r}
+ggplot(model2 %>% augment(df_uk_test), aes(.pred, .resid)) + 
+    geom_point(alpha=0.2, size=3, color="red", stroke=1) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(x = "Fitted values", y = "Residuals", title="Residuals vs Fitted") + 
+    theme_bw() + 
+    theme(axis.title.x = element_text(size = rel(1.2)), 
+          axis.text.x = element_text(size = rel(1.2)),
+          axis.title.y = element_text(size = rel(1.2)),
+          axis.text.y = element_text(size = rel(1.2)),
+          plot.title = element_text(size = rel(1.5), face = "bold"))
+```
+
+There doesn't appear to be much of a linear relationship between our variables in model 2 testing set.
+
+# Evaluating model:
+
+#🖩Calculating MAE- Training set/model 1
+
+The mean absolute error allows us to distinguish how far the model is off from a true observation.
+
+```{r}
+model1 %>% 
+    augment(df_uk_train) %>%
+    mae(truth = SalesVolume, estimate = .pred)
+```
+
+```{r}
+favstats(~SalesVolume, data = df_uk)
+```
+
+As demonstrated by the summary descriptives of sales volume provided by favstats(), we can see the central tendency is 27,648. The MAE in comparison is only a fraction of this value at 9228, indicating a relatively accurate prediction with an average error only approximately 9000 away from the mean.
+
+#Calculating MAE- Testing set/model 1 (Step 6)
+
+```{r}
+model1%>% 
+    augment(df_uk_test) %>%
+    mae(truth = SalesVolume, estimate = .pred)
+```
+
+The MAE for the testing set is significantly larger than the training set, indicating that the model is not generalizing well to the rest of our dataset.
+
+#Calculating MAE- training set/model 2
+
+```{r}
+model2%>% 
+    augment(df_uk_train) %>%
+    mae(truth = SalesVolume, estimate = .pred)
+```
+
+Our second linear model has a larger MAE than model 1, additionally the training set doesn't seem to fit the linear model well.
+
+#Calculating MAE- testing set/model 2
+
+```{r}
+model2%>% 
+    augment(df_uk_test) %>%
+    mae(truth = SalesVolume, estimate = .pred)
+```
+
+# Commentary (step 7)
+
+I ran a linear model with the outcome variable as 'SalesVolume' and the explanatory variable as 'SalesVolume1' (i.e., the lagged sales volume). This made up my first model. By creating a linear regression with these variables we can analyze the monthly lag/ change in sales volume per 1 month. Running a regression between a variable and their lagged counterpart is necessary for analyze time-lapsed relationships hence why this was my first model. The MAE was relatively small for our training model but not testing set, indicating the linear model is potentially overfitted.
+
+Other configurations I tried included a linear model for 'lm(SalesVolume \~ monthly_changes_lag1)'. This curated my model2 as the MAE for my first model was quite high and I just thought to attempt other potential logical configurations to analyze. However, the MAE was larger than model 1 for both the training and testing set, and the plot actually appeared to be less linear for both the training and testing data frame in our first model.
+
+From this I can conclude model 1 was closer to a true model in analyzing sales volume per month.
